@@ -1,0 +1,60 @@
+import { createClient } from "@/lib/supabase/server";
+import { NextRequest } from "next/server";
+
+type ExportEntry = {
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  note: string | null;
+  task: { name: string; project: { name: string } | null } | null;
+};
+
+export async function GET(request: NextRequest) {
+  const supabase = await createClient();
+  const format = request.nextUrl.searchParams.get("format") === "json" ? "json" : "csv";
+
+  const { data: entries } = await supabase
+    .from("time_entries")
+    .select(
+      "started_at, ended_at, duration_seconds, note, task:tasks(name, project:projects(name))",
+    )
+    .not("ended_at", "is", null)
+    .order("started_at", { ascending: false });
+
+  const rows = ((entries ?? []) as unknown as ExportEntry[]).map((e) => ({
+    date: e.started_at.slice(0, 10),
+    project: e.task?.project?.name ?? "",
+    task: e.task?.name ?? "",
+    started_at: e.started_at,
+    ended_at: e.ended_at,
+    duration_seconds: e.duration_seconds,
+    note: e.note ?? "",
+  }));
+
+  if (format === "json") {
+    return new Response(JSON.stringify(rows, null, 2), {
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Disposition": 'attachment; filename="pichacky-export.json"',
+      },
+    });
+  }
+
+  const header = "date,project,task,started_at,ended_at,duration_seconds,note";
+  const csvEscape = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const csv = [
+    header,
+    ...rows.map((r) =>
+      [r.date, r.project, r.task, r.started_at, r.ended_at, r.duration_seconds, r.note]
+        .map(csvEscape)
+        .join(","),
+    ),
+  ].join("\n");
+
+  return new Response(csv, {
+    headers: {
+      "Content-Type": "text/csv",
+      "Content-Disposition": 'attachment; filename="pichacky-export.csv"',
+    },
+  });
+}
