@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import TimerWidget from "@/components/TimerWidget";
+import QuickStart from "@/components/QuickStart";
 import { formatDuration } from "@/lib/stats";
 import { startOfDay, startOfWeek } from "date-fns";
 
@@ -22,44 +23,44 @@ export default async function DashboardPage() {
 
   const { data: tasksData } = await supabase
     .from("tasks")
-    .select("id, name, project:projects(name, color)")
+    .select("id, name, recurring, project:projects(name, color)")
     .eq("archived", false)
     .order("name");
 
   const tasks = (tasksData ?? []) as unknown as {
     id: string;
     name: string;
+    recurring: boolean;
     project: ProjectRef;
   }[];
+
+  const recurringTasks = tasks.filter((t) => t.recurring);
 
   const todayStart = startOfDay(new Date()).toISOString();
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 }).toISOString();
 
-  const { data: todayEntries } = await supabase
-    .from("time_entries")
-    .select("duration_seconds")
-    .gte("started_at", todayStart)
-    .not("duration_seconds", "is", null);
-
-  const { data: weekEntries } = await supabase
-    .from("time_entries")
-    .select("duration_seconds")
-    .gte("started_at", weekStart)
-    .not("duration_seconds", "is", null);
-
-  const { data: recentData } = await supabase
-    .from("time_entries")
-    .select(
-      "id, started_at, ended_at, duration_seconds, note, task:tasks(name, project:projects(name, color))",
-    )
-    .not("ended_at", "is", null)
-    .order("started_at", { ascending: false })
-    .limit(8);
+  const [{ data: todayEntries }, { data: weekEntries }, { data: recentData }] = await Promise.all([
+    supabase
+      .from("time_entries")
+      .select("duration_seconds")
+      .gte("started_at", todayStart)
+      .not("duration_seconds", "is", null),
+    supabase
+      .from("time_entries")
+      .select("duration_seconds")
+      .gte("started_at", weekStart)
+      .not("duration_seconds", "is", null),
+    supabase
+      .from("time_entries")
+      .select("id, started_at, ended_at, duration_seconds, note, task:tasks(name, project:projects(name, color))")
+      .not("ended_at", "is", null)
+      .order("started_at", { ascending: false })
+      .limit(8),
+  ]);
 
   const recent = (recentData ?? []) as unknown as {
     id: string;
     started_at: string;
-    ended_at: string | null;
     duration_seconds: number | null;
     note: string | null;
     task: { name: string; project: ProjectRef } | null;
@@ -73,19 +74,17 @@ export default async function DashboardPage() {
       <div>
         <h1 style={{ fontSize: "1.5rem" }}>Přehled</h1>
         <p className="muted" style={{ marginTop: "0.2rem" }}>
-          Spusť časovač nebo si zkontroluj dnešní výkon.
+          {new Date().toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" })}
         </p>
       </div>
 
       <TimerWidget tasks={tasks} running={running} />
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: "1rem",
-        }}
-      >
+      {recurringTasks.length > 0 && !running && (
+        <QuickStart tasks={recurringTasks} />
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "1rem" }}>
         <StatCard label="Dnes" value={formatDuration(todayTotal)} />
         <StatCard label="Tento týden" value={formatDuration(weekTotal)} />
         <StatCard label="Aktivních tasků" value={String(tasks.length)} />
@@ -94,17 +93,10 @@ export default async function DashboardPage() {
       <div className="card">
         <div
           className="card-pad"
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            borderBottom: "1px solid var(--border)",
-          }}
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)" }}
         >
           <h2 style={{ fontSize: "1rem" }}>Poslední záznamy</h2>
-          <a href="/history" className="btn btn-ghost btn-sm">
-            Vše →
-          </a>
+          <a href="/history" className="btn btn-ghost btn-sm">Vše →</a>
         </div>
         {recent.length === 0 ? (
           <div className="card-pad muted">Zatím žádné záznamy.</div>
@@ -114,10 +106,7 @@ export default async function DashboardPage() {
               {recent.map((e) => (
                 <tr key={e.id}>
                   <td style={{ width: "0.5rem", paddingRight: 0 }}>
-                    <span
-                      className="dot"
-                      style={{ background: e.task?.project?.color ?? "#cbd5e1" }}
-                    />
+                    <span className="dot" style={{ background: e.task?.project?.color ?? "#cbd5e1" }} />
                   </td>
                   <td>
                     <div style={{ fontWeight: 500 }}>{e.task?.name}</div>
@@ -129,20 +118,10 @@ export default async function DashboardPage() {
                       </div>
                     )}
                   </td>
-                  <td className="muted" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    {new Date(e.started_at).toLocaleDateString("cs-CZ", {
-                      day: "numeric",
-                      month: "numeric",
-                    })}
+                  <td className="muted" style={{ textAlign: "right", whiteSpace: "nowrap", fontSize: "0.8rem" }}>
+                    {new Date(e.started_at).toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric" })}
                   </td>
-                  <td
-                    style={{
-                      textAlign: "right",
-                      fontWeight: 600,
-                      fontVariantNumeric: "tabular-nums",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <td style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                     {formatDuration(e.duration_seconds ?? 0)}
                   </td>
                 </tr>
@@ -158,10 +137,8 @@ export default async function DashboardPage() {
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="card card-pad">
-      <div className="muted" style={{ fontSize: "0.8rem" }}>
-        {label}
-      </div>
-      <div style={{ fontSize: "1.75rem", fontWeight: 700, marginTop: "0.2rem" }}>{value}</div>
+      <div className="muted" style={{ fontSize: "0.8rem" }}>{label}</div>
+      <div style={{ fontSize: "1.75rem", fontWeight: 700, marginTop: "0.15rem" }}>{value}</div>
     </div>
   );
 }

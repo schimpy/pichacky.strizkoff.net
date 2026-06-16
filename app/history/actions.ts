@@ -47,19 +47,20 @@ export async function updateTimeEntry(id: string, formData: FormData) {
   const startTime = formData.get("start_time") as string;
   const endTime = formData.get("end_time") as string;
   const note = (formData.get("note") as string) || null;
+  const taskId = formData.get("task_id") as string | null;
 
   const startedAt = new Date(`${date}T${startTime}`).toISOString();
   const endedAt = new Date(`${date}T${endTime}`).toISOString();
 
-  const { error } = await supabase
-    .from("time_entries")
-    .update({
-      started_at: startedAt,
-      ended_at: endedAt,
-      duration_seconds: computeDuration(startedAt, endedAt),
-      note,
-    })
-    .eq("id", id);
+  const update: Record<string, unknown> = {
+    started_at: startedAt,
+    ended_at: endedAt,
+    duration_seconds: computeDuration(startedAt, endedAt),
+    note,
+  };
+  if (taskId) update.task_id = taskId;
+
+  const { error } = await supabase.from("time_entries").update(update).eq("id", id);
   if (error) throw new Error(`Nepodařilo se upravit záznam: ${error.message}`);
 
   revalidatePath("/history");

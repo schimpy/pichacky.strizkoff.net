@@ -1,200 +1,228 @@
 import { createClient } from "@/lib/supabase/server";
-import {
-  createProject,
-  archiveProject,
-  createTag,
-  deleteTag,
-  createTask,
-  archiveTask,
-} from "./actions";
+import { archiveProject, archiveTask, createProject, createTag, createTask, deleteTag } from "./actions";
 import SubmitButton from "@/components/SubmitButton";
+import EditProjectModal from "@/components/EditProjectModal";
+import EditTaskModal from "@/components/EditTaskModal";
 
 export default async function TasksPage() {
   const supabase = await createClient();
 
   const { data: projects } = await supabase
     .from("projects")
-    .select("*")
+    .select("id, name, color")
     .eq("archived", false)
     .order("name");
 
-  const { data: tags } = await supabase.from("tags").select("*").order("name");
+  const { data: tags } = await supabase.from("tags").select("id, name").order("name");
 
   const { data: tasksData } = await supabase
     .from("tasks")
-    .select("id, name, project:projects(name, color), task_tags(tag:tags(id, name))")
+    .select("id, name, project_id, recurring, project:projects(name, color), task_tags(tag_id, tag:tags(id, name))")
     .eq("archived", false)
     .order("name");
 
   const tasks = (tasksData ?? []) as unknown as {
     id: string;
     name: string;
+    project_id: string | null;
+    recurring: boolean;
     project: { name: string; color: string } | null;
-    task_tags: { tag: { id: string; name: string } | null }[];
+    task_tags: { tag_id: string; tag: { id: string; name: string } | null }[];
   }[];
 
+  const recurring = tasks.filter((t) => t.recurring);
+  const oneOff = tasks.filter((t) => !t.recurring);
+
+  const projectList = projects ?? [];
+  const tagList = tags ?? [];
+
+  const sectionHead = (title: string) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "0.75rem",
+        marginBottom: "0.75rem",
+        paddingBottom: "0.5rem",
+        borderBottom: "1px solid var(--border)",
+      }}
+    >
+      <h2 style={{ fontSize: "1rem", flex: 1 }}>{title}</h2>
+    </div>
+  );
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
       <div>
         <h1 style={{ fontSize: "1.5rem" }}>Tasky</h1>
         <p className="muted" style={{ marginTop: "0.2rem" }}>
-          Spravuj projekty, tagy a tasky, které pak měříš časovačem.
+          Správa projektů, tagů a tasků.
         </p>
       </div>
 
-      {/* Nový task */}
+      {/* ---- Projects ---- */}
       <div className="card card-pad">
-        <h2 style={{ fontSize: "1rem", marginBottom: "0.9rem" }}>Nový task</h2>
-        <form action={createTask} style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem" }}>
-            <div>
-              <label className="label">Název tasku</label>
-              <input name="name" required placeholder="Např. Implementace přihlášení" className="input" />
+        {sectionHead("Projekty")}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
+          {projectList.length === 0 && <p className="muted" style={{ margin: 0, fontSize: "0.875rem" }}>Žádné projekty.</p>}
+          {projectList.map((p) => (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span className="dot" style={{ background: p.color }} />
+              <span style={{ flex: 1, fontSize: "0.875rem", fontWeight: 500 }}>{p.name}</span>
+              <EditProjectModal project={p} />
+              <form action={archiveProject.bind(null, p.id)}>
+                <SubmitButton className="btn btn-ghost btn-sm" pendingText="…">Archivovat</SubmitButton>
+              </form>
             </div>
-            <div>
-              <label className="label">Projekt</label>
-              <select name="project_id" className="select">
-                <option value="">— bez projektu —</option>
-                {(projects ?? []).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          ))}
+        </div>
+        <form action={createProject} style={{ display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <label className="label">Nový projekt</label>
+            <input name="name" placeholder="Název" required className="input" />
           </div>
-          {(tags ?? []).length > 0 && (
-            <div>
-              <label className="label">Tagy</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-                {(tags ?? []).map((t) => (
-                  <label
-                    key={t.id}
-                    className="badge"
-                    style={{ cursor: "pointer", userSelect: "none", background: "#f1f5f9", color: "var(--text)" }}
-                  >
-                    <input type="checkbox" name="tag_ids" value={t.id} style={{ margin: 0 }} />
-                    {t.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-          <div>
-            <SubmitButton pendingText="Přidávám…">+ Přidat task</SubmitButton>
-          </div>
+          <input name="color" type="color" defaultValue="#4f46e5" className="input" style={{ width: "3rem", height: "2.35rem", padding: "0.2rem" }} />
+          <SubmitButton className="btn btn-primary" pendingText="…">Přidat</SubmitButton>
         </form>
       </div>
 
-      {/* Seznam tasků */}
+      {/* ---- Tags ---- */}
+      <div className="card card-pad">
+        {sectionHead("Tagy")}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+          {tagList.length === 0 && <span className="muted" style={{ fontSize: "0.875rem" }}>Žádné tagy.</span>}
+          {tagList.map((t) => (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+              <span className="badge">{t.name}</span>
+              <form action={deleteTag.bind(null, t.id)} style={{ display: "inline" }}>
+                <button type="submit" className="muted" style={{ background: "none", border: "none", cursor: "pointer", fontSize: "0.8rem", padding: "0 0.2rem" }}>✕</button>
+              </form>
+            </div>
+          ))}
+        </div>
+        <form action={createTag} style={{ display: "flex", gap: "0.5rem" }}>
+          <div style={{ flex: 1 }}>
+            <label className="label">Nový tag</label>
+            <input name="name" placeholder="Název tagu" required className="input" />
+          </div>
+          <SubmitButton className="btn btn-primary" pendingText="…" >Přidat</SubmitButton>
+        </form>
+      </div>
+
+      {/* ---- Tasks ---- */}
       <div className="card">
         <div className="card-pad" style={{ borderBottom: "1px solid var(--border)" }}>
-          <h2 style={{ fontSize: "1rem" }}>Aktivní tasky</h2>
+          <h2 style={{ fontSize: "1rem" }}>Tasky</h2>
         </div>
-        {tasks.length === 0 ? (
-          <div className="card-pad muted">Zatím žádné tasky.</div>
-        ) : (
-          <table className="table">
-            <tbody>
-              {tasks.map((t) => (
-                <tr key={t.id}>
-                  <td style={{ width: "0.5rem", paddingRight: 0 }}>
-                    <span className="dot" style={{ background: t.project?.color ?? "#cbd5e1" }} />
-                  </td>
-                  <td>
-                    <span style={{ fontWeight: 500 }}>{t.name}</span>
-                    {t.project && <span className="muted"> · {t.project.name}</span>}
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap" }}>
-                      {t.task_tags
-                        ?.map((tt) => tt.tag)
-                        .filter(Boolean)
-                        .map((tag) => (
-                          <span key={tag!.id} className="badge">
-                            {tag!.name}
-                          </span>
-                        ))}
-                    </div>
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <form action={archiveTask.bind(null, t.id)}>
-                      <SubmitButton className="btn btn-ghost btn-sm" pendingText="…">
-                        Archivovat
-                      </SubmitButton>
-                    </form>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+        {recurring.length > 0 && (
+          <div className="card-pad" style={{ borderBottom: "1px solid var(--border)" }}>
+            <p className="muted" style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
+              🔁 Opakující se
+            </p>
+            <TaskList
+              tasks={recurring}
+              projects={projectList}
+              tags={tagList}
+            />
+          </div>
         )}
-      </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.5rem" }}>
-        {/* Projekty */}
-        <div className="card">
+        {oneOff.length > 0 && (
           <div className="card-pad" style={{ borderBottom: "1px solid var(--border)" }}>
-            <h2 style={{ fontSize: "1rem" }}>Projekty</h2>
+            {recurring.length > 0 && (
+              <p className="muted" style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
+                Jednorázové
+              </p>
+            )}
+            <TaskList
+              tasks={oneOff}
+              projects={projectList}
+              tags={tagList}
+            />
           </div>
-          <div className="card-pad" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {(projects ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>Žádné projekty.</p>}
-            {(projects ?? []).map((p) => (
-              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <span className="dot" style={{ background: p.color }} />
-                <span style={{ flex: 1 }}>{p.name}</span>
-                <form action={archiveProject.bind(null, p.id)}>
-                  <SubmitButton className="btn btn-ghost btn-sm" pendingText="…">
-                    Archivovat
-                  </SubmitButton>
-                </form>
-              </div>
-            ))}
-            <form action={createProject} style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-              <input name="name" placeholder="Nový projekt" required className="input" style={{ flex: 1 }} />
-              <input name="color" type="color" defaultValue="#4f46e5" className="input" style={{ width: "3rem", padding: "0.2rem" }} />
-              <SubmitButton pendingText="…">Přidat</SubmitButton>
-            </form>
-          </div>
+        )}
+
+        {tasks.length === 0 && (
+          <div className="card-pad muted">Žádné tasky.</div>
+        )}
+
+        <div className="card-pad">
+          <p className="label" style={{ marginBottom: "0.75rem" }}>Nový task</p>
+          <form action={createTask} style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+            <input name="name" placeholder="Název tasku" required className="input" />
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <select name="project_id" className="select" style={{ flex: 1, minWidth: "10rem" }}>
+                <option value="">Bez projektu</option>
+                {projectList.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              {tagList.length > 0 && (
+                <select name="tag_ids" multiple className="select" style={{ flex: 1, minWidth: "10rem", height: "5rem" }}>
+                  {tagList.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", cursor: "pointer" }}>
+              <input name="recurring" type="checkbox" style={{ width: "1rem", height: "1rem" }} />
+              Opakující se task
+            </label>
+            <div>
+              <SubmitButton className="btn btn-primary" pendingText="Ukládám…">Přidat task</SubmitButton>
+            </div>
+          </form>
         </div>
+      </div>
+    </div>
+  );
+}
 
-        {/* Tagy */}
-        <div className="card">
-          <div className="card-pad" style={{ borderBottom: "1px solid var(--border)" }}>
-            <h2 style={{ fontSize: "1rem" }}>Tagy</h2>
-          </div>
-          <div className="card-pad" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {(tags ?? []).length === 0 && <p className="muted" style={{ margin: 0 }}>Žádné tagy.</p>}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
-              {(tags ?? []).map((t) => (
-                <span key={t.id} className="badge" style={{ paddingRight: "0.3rem" }}>
-                  {t.name}
-                  <form action={deleteTag.bind(null, t.id)} style={{ display: "inline-flex" }}>
-                    <button
-                      type="submit"
-                      title="Smazat tag"
-                      style={{
-                        border: "none",
-                        background: "none",
-                        cursor: "pointer",
-                        color: "var(--muted)",
-                        padding: "0 0.1rem",
-                        lineHeight: 1,
-                      }}
-                    >
-                      ×
-                    </button>
-                  </form>
+function TaskList({
+  tasks,
+  projects,
+  tags,
+}: {
+  tasks: {
+    id: string;
+    name: string;
+    project_id: string | null;
+    recurring: boolean;
+    project: { name: string; color: string } | null;
+    task_tags: { tag_id: string; tag: { id: string; name: string } | null }[];
+  }[];
+  projects: { id: string; name: string; color: string }[];
+  tags: { id: string; name: string }[];
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+      {tasks.map((t) => (
+        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          {t.project && <span className="dot" style={{ background: t.project.color, flexShrink: 0 }} />}
+          <span style={{ flex: 1, fontSize: "0.875rem" }}>
+            {t.project && <span className="muted">{t.project.name} · </span>}
+            <span style={{ fontWeight: 500 }}>{t.name}</span>
+            {t.task_tags
+              .filter((tt) => tt.tag)
+              .map((tt) => (
+                <span key={tt.tag_id} className="badge" style={{ marginLeft: "0.4rem" }}>
+                  {tt.tag!.name}
                 </span>
               ))}
-            </div>
-            <form action={createTag} style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
-              <input name="name" placeholder="Nový tag" required className="input" style={{ flex: 1 }} />
-              <SubmitButton pendingText="…">Přidat</SubmitButton>
-            </form>
-          </div>
+          </span>
+          <EditTaskModal
+            task={{ id: t.id, name: t.name, project_id: t.project_id, recurring: t.recurring }}
+            projects={projects}
+            tags={tags}
+            currentTagIds={t.task_tags.map((tt) => tt.tag_id)}
+          />
+          <form action={archiveTask.bind(null, t.id)}>
+            <SubmitButton className="btn btn-ghost btn-sm" pendingText="…">Archivovat</SubmitButton>
+          </form>
         </div>
-      </div>
+      ))}
     </div>
   );
 }

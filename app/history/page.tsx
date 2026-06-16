@@ -1,7 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { createTimeEntry, updateTimeEntry, deleteTimeEntry } from "./actions";
 import { formatDuration } from "@/lib/stats";
-import EntryDialog from "@/components/EntryDialog";
+import SubmitButton from "@/components/SubmitButton";
+import TaskCombobox from "@/components/TaskCombobox";
+
+type TaskRef = {
+  id: string;
+  name: string;
+  project_id: string | null;
+  project: { name: string } | null;
+};
 
 type EntryRow = {
   id: string;
@@ -9,200 +17,240 @@ type EntryRow = {
   ended_at: string | null;
   duration_seconds: number | null;
   note: string | null;
-  task: {
-    id: string;
-    name: string;
-    project_id: string | null;
-    project: { name: string; color: string } | null;
-  } | null;
+  task: TaskRef | null;
 };
-
-function timePart(iso: string) {
-  return iso.slice(11, 16);
-}
-function datePart(iso: string) {
-  return iso.slice(0, 10);
-}
-function dateLabel(iso: string) {
-  const [y, m, d] = iso.slice(0, 10).split("-");
-  return `${Number(d)}. ${Number(m)}. ${y}`;
-}
 
 export default async function HistoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string; task?: string }>;
+  searchParams: Promise<{ q?: string; from?: string; to?: string; sort?: string; project?: string }>;
 }) {
-  const { project, task } = await searchParams;
+  const { q = "", from, to, sort = "desc", project } = await searchParams;
   const supabase = await createClient();
 
   const { data: tasksData } = await supabase
     .from("tasks")
-    .select("id, name, project_id, project:projects(id, name)")
-    .eq("archived", false)
+    .select("id, name, project_id, project:projects(id, name, color)")
     .order("name");
 
   const tasks = (tasksData ?? []) as unknown as {
     id: string;
     name: string;
     project_id: string | null;
-    project: { id: string; name: string } | null;
+    project: { id: string; name: string; color: string } | null;
   }[];
 
-  const { data: projects } = await supabase
-    .from("projects")
-    .select("id, name")
-    .order("name");
+  const { data: projects } = await supabase.from("projects").select("id, name").order("name");
 
   let query = supabase
     .from("time_entries")
-    .select(
-      "id, started_at, ended_at, duration_seconds, note, task:tasks(id, name, project_id, project:projects(name, color))",
-    )
+    .select("id, started_at, ended_at, duration_seconds, note, task:tasks(id, name, project_id, project:projects(name))")
     .not("ended_at", "is", null)
-    .order("started_at", { ascending: false })
+    .order("started_at", { ascending: sort === "asc" })
     .limit(200);
 
-  if (task) query = query.eq("task_id", task);
+  if (from) query = query.gte("started_at", from);
+  if (to) query = query.lte("started_at", to + "T23:59:59");
+  if (project) query = query.eq("task.project_id", project);
 
-  const { data: entries } = await query;
+  const { data: entriesData } = await query;
+  let entries = (entriesData ?? []) as unknown as EntryRow[];
 
-  const filtered = ((entries ?? []) as unknown as EntryRow[]).filter(
-    (e) => !project || e.task?.project_id === project,
-  );
-
-  const totalSeconds = filtered.reduce((s, e) => s + (e.duration_seconds ?? 0), 0);
-  const exportQs = new URLSearchParams();
-  if (project) exportQs.set("project", project);
-  if (task) exportQs.set("task", task);
+  if (q) {
+    const lower = q.toLowerCase();
+    entries = entries.filter(
+      (e) =>
+        e.task?.name?.toLowerCase().includes(lower) ||
+        e.task?.project?.name?.toLowerCase().includes(lower) ||
+        e.note?.toLowerCase().includes(lower),
+    );
+  }
+  if (project) {
+    entries = entries.filter((e) => e.task?.project_id === project);
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
         <div>
           <h1 style={{ fontSize: "1.5rem" }}>Historie</h1>
-          <p className="muted" style={{ marginTop: "0.2rem" }}>
-            Celkem {formatDuration(totalSeconds)} · {filtered.length} záznamů
-          </p>
+          <p className="muted" style={{ marginTop: "0.2rem" }}>{entries.length} záznamů</p>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          <a href={`/history/export?format=csv&${exportQs}`} className="btn btn-ghost">
-            Export CSV
-          </a>
-          <a href={`/history/export?format=json&${exportQs}`} className="btn btn-ghost">
-            Export JSON
-          </a>
-          {tasks.length > 0 && (
-            <EntryDialog
-              mode="new"
-              tasks={tasks}
-              saveAction={createTimeEntry}
-              triggerClassName="btn btn-primary"
-              triggerLabel="+ Nový záznam"
-            />
-          )}
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <a href="/history/export?format=csv" className="btn btn-ghost btn-sm">↓ CSV</a>
+          <a href="/history/export?format=json" className="btn btn-ghost btn-sm">↓ JSON</a>
         </div>
       </div>
 
-      {/* Filtr */}
-      <form className="card card-pad" style={{ display: "flex", gap: "0.75rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-        <div style={{ minWidth: "12rem" }}>
+      {/* Filters */}
+      <form
+        className="card card-pad"
+        style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "flex-end" }}
+      >
+        <div style={{ flex: 2, minWidth: "12rem" }}>
+          <label className="label">Hledat</label>
+          <input name="q" defaultValue={q} placeholder="Task, projekt, poznámka…" className="input" />
+        </div>
+        <div>
           <label className="label">Projekt</label>
           <select name="project" defaultValue={project ?? ""} className="select">
-            <option value="">Všechny projekty</option>
+            <option value="">Vše</option>
             {(projects ?? []).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
         </div>
-        <div style={{ minWidth: "12rem" }}>
-          <label className="label">Task</label>
-          <select name="task" defaultValue={task ?? ""} className="select">
-            <option value="">Všechny tasky</option>
-            {tasks.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
+        <div>
+          <label className="label">Od</label>
+          <input name="from" type="date" defaultValue={from ?? ""} className="input" style={{ width: "9rem" }} />
+        </div>
+        <div>
+          <label className="label">Do</label>
+          <input name="to" type="date" defaultValue={to ?? ""} className="input" style={{ width: "9rem" }} />
+        </div>
+        <div>
+          <label className="label">Řadit</label>
+          <select name="sort" defaultValue={sort} className="select" style={{ width: "8rem" }}>
+            <option value="desc">Nejnovější</option>
+            <option value="asc">Nejstarší</option>
           </select>
         </div>
-        <button type="submit" className="btn btn-ghost">
-          Filtrovat
-        </button>
-        {(project || task) && (
-          <a href="/history" className="btn btn-ghost" style={{ color: "var(--muted)" }}>
-            Zrušit filtr
-          </a>
-        )}
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button type="submit" className="btn btn-primary">Filtrovat</button>
+          <a href="/history" className="btn btn-ghost">Reset</a>
+        </div>
       </form>
 
-      {/* Tabulka */}
+      {/* Add entry */}
       <div className="card">
-        {filtered.length === 0 ? (
-          <div className="card-pad muted">Žádné záznamy.</div>
-        ) : (
-          <table className="table">
-            <thead>
+        <div className="card-pad" style={{ borderBottom: "1px solid var(--border)" }}>
+          <h2 style={{ fontSize: "1rem" }}>Přidat záznam</h2>
+        </div>
+        <form action={createTimeEntry} className="card-pad" style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ flex: 2, minWidth: "12rem" }}>
+            <label className="label">Task</label>
+            <TaskCombobox tasks={tasks} />
+          </div>
+          <div>
+            <label className="label">Datum</label>
+            <input type="date" name="date" required className="input" style={{ width: "9rem" }} defaultValue={new Date().toISOString().slice(0, 10)} />
+          </div>
+          <div>
+            <label className="label">Od</label>
+            <input type="time" name="start_time" required className="input" style={{ width: "7rem" }} />
+          </div>
+          <div>
+            <label className="label">Do</label>
+            <input type="time" name="end_time" required className="input" style={{ width: "7rem" }} />
+          </div>
+          <div style={{ flex: 1, minWidth: "8rem" }}>
+            <label className="label">Poznámka</label>
+            <input name="note" placeholder="Volitelně…" className="input" />
+          </div>
+          <SubmitButton className="btn btn-primary" pendingText="Ukládám…">Přidat</SubmitButton>
+        </form>
+      </div>
+
+      {/* Table */}
+      <div className="card" style={{ overflowX: "auto" }}>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Datum</th>
+              <th>Od – Do</th>
+              <th>Doba</th>
+              <th>Poznámka</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.length === 0 && (
               <tr>
-                <th>Datum</th>
-                <th>Task</th>
-                <th>Od–Do</th>
-                <th style={{ textAlign: "right" }}>Doba</th>
-                <th></th>
+                <td colSpan={6} style={{ textAlign: "center", padding: "2rem", color: "var(--muted)" }}>
+                  Žádné záznamy.
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {filtered.map((e) => (
-                <tr key={e.id}>
-                  <td className="muted" style={{ whiteSpace: "nowrap" }}>
-                    {dateLabel(e.started_at)}
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                      <span className="dot" style={{ background: e.task?.project?.color ?? "#cbd5e1" }} />
-                      <div>
-                        <div style={{ fontWeight: 500 }}>{e.task?.name}</div>
-                        {(e.task?.project || e.note) && (
-                          <div className="muted" style={{ fontSize: "0.8rem" }}>
-                            {e.task?.project?.name}
-                            {e.task?.project && e.note ? " · " : ""}
-                            {e.note}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="muted" style={{ whiteSpace: "nowrap" }}>
-                    {timePart(e.started_at)}–{timePart(e.ended_at as string)}
-                  </td>
-                  <td style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-                    {formatDuration(e.duration_seconds ?? 0)}
-                  </td>
-                  <td style={{ textAlign: "right" }}>
-                    <EntryDialog
-                      mode="edit"
-                      tasks={tasks}
-                      defaults={{
-                        task_id: e.task?.id ?? "",
-                        date: datePart(e.started_at),
-                        start_time: timePart(e.started_at),
-                        end_time: timePart(e.ended_at as string),
-                        note: e.note ?? "",
-                      }}
-                      saveAction={updateTimeEntry.bind(null, e.id)}
-                      deleteAction={deleteTimeEntry.bind(null, e.id)}
-                      triggerClassName="btn btn-ghost btn-sm"
-                      triggerLabel="Upravit"
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+            )}
+            {entries.map((e) => (
+              <EntryRow key={e.id} entry={e} tasks={tasks} />
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
+
+function EntryRow({
+  entry: e,
+  tasks,
+}: {
+  entry: EntryRow;
+  tasks: { id: string; name: string; project_id: string | null; project: { id: string; name: string; color: string } | null }[];
+}) {
+  const start = new Date(e.started_at);
+  const end = new Date(e.ended_at as string);
+  const fmt = (d: Date) => d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
+
+  return (
+    <>
+      <tr>
+        <td>
+          <span style={{ fontWeight: 500 }}>{e.task?.name}</span>
+          {e.task?.project && (
+            <div className="muted" style={{ fontSize: "0.8rem" }}>{e.task.project.name}</div>
+          )}
+        </td>
+        <td className="muted" style={{ whiteSpace: "nowrap" }}>
+          {start.toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric", year: "2-digit" })}
+        </td>
+        <td style={{ whiteSpace: "nowrap" }}>{fmt(start)} – {fmt(end)}</td>
+        <td style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+          {formatDuration(e.duration_seconds ?? 0)}
+        </td>
+        <td className="muted" style={{ maxWidth: "12rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {e.note}
+        </td>
+        <td>
+          <div style={{ display: "flex", gap: "0.25rem" }}>
+            <EditEntryForm entry={e} tasks={tasks} />
+          </div>
+        </td>
+      </tr>
+    </>
+  );
+}
+
+function EditEntryForm({
+  entry: e,
+  tasks,
+}: {
+  entry: EntryRow;
+  tasks: { id: string; name: string; project_id: string | null; project: { id: string; name: string; color: string } | null }[];
+}) {
+  const start = new Date(e.started_at);
+  const end = new Date(e.ended_at as string);
+
+  return (
+    <>
+      <form
+        action={updateTimeEntry.bind(null, e.id)}
+        style={{ display: "contents" }}
+        id={`edit-${e.id}`}
+      >
+        <input type="hidden" name="date" value={start.toISOString().slice(0, 10)} />
+        <input type="hidden" name="start_time" value={start.toTimeString().slice(0, 5)} />
+        <input type="hidden" name="end_time" value={end.toTimeString().slice(0, 5)} />
+        <input type="hidden" name="note" value={e.note ?? ""} />
+      </form>
+      <InlineEditButton entry={e} tasks={tasks} />
+      <form action={deleteTimeEntry.bind(null, e.id)} style={{ display: "inline" }}>
+        <SubmitButton className="btn btn-ghost btn-sm" pendingText="…" >Smazat</SubmitButton>
+      </form>
+    </>
+  );
+}
+
+// client wrapper for the inline edit experience
+import InlineEditButton from "./InlineEditButton";

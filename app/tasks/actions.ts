@@ -20,6 +20,19 @@ export async function createProject(formData: FormData) {
   const { error } = await supabase.from("projects").insert({ user_id: user.id, name, color });
   if (error) throw new Error(`Nepodařilo se uložit projekt: ${error.message}`);
   revalidatePath("/tasks");
+  revalidatePath("/");
+}
+
+export async function updateProject(id: string, formData: FormData) {
+  const { supabase } = await requireUser();
+  const name = formData.get("name") as string;
+  const color = formData.get("color") as string;
+
+  const { error } = await supabase.from("projects").update({ name, color }).eq("id", id);
+  if (error) throw new Error(`Nepodařilo se uložit projekt: ${error.message}`);
+  revalidatePath("/tasks");
+  revalidatePath("/");
+  revalidatePath("/stats");
 }
 
 export async function archiveProject(id: string) {
@@ -50,10 +63,11 @@ export async function createTask(formData: FormData) {
   const name = formData.get("name") as string;
   const projectId = formData.get("project_id") as string;
   const tagIds = formData.getAll("tag_ids") as string[];
+  const recurring = formData.get("recurring") === "on";
 
   const { data: task, error } = await supabase
     .from("tasks")
-    .insert({ user_id: user.id, name, project_id: projectId || null })
+    .insert({ user_id: user.id, name, project_id: projectId || null, recurring })
     .select("id")
     .single();
 
@@ -67,6 +81,32 @@ export async function createTask(formData: FormData) {
   }
 
   revalidatePath("/tasks");
+  revalidatePath("/");
+}
+
+export async function updateTask(id: string, formData: FormData) {
+  const { supabase } = await requireUser();
+  const name = formData.get("name") as string;
+  const projectId = formData.get("project_id") as string;
+  const tagIds = formData.getAll("tag_ids") as string[];
+  const recurring = formData.get("recurring") === "on";
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({ name, project_id: projectId || null, recurring })
+    .eq("id", id);
+  if (error) throw new Error(`Nepodařilo se uložit task: ${error.message}`);
+
+  // replace tag assignments
+  await supabase.from("task_tags").delete().eq("task_id", id);
+  if (tagIds.length > 0) {
+    await supabase
+      .from("task_tags")
+      .insert(tagIds.map((tagId) => ({ task_id: id, tag_id: tagId })));
+  }
+
+  revalidatePath("/tasks");
+  revalidatePath("/");
 }
 
 export async function archiveTask(id: string) {
@@ -74,4 +114,5 @@ export async function archiveTask(id: string) {
   const { error } = await supabase.from("tasks").update({ archived: true }).eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/tasks");
+  revalidatePath("/");
 }
