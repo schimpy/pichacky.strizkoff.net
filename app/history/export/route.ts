@@ -6,22 +6,31 @@ type ExportEntry = {
   ended_at: string | null;
   duration_seconds: number | null;
   note: string | null;
-  task: { name: string; project: { name: string } | null } | null;
+  task: { project_id: string | null; name: string; project: { name: string } | null } | null;
 };
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
-  const format = request.nextUrl.searchParams.get("format") === "json" ? "json" : "csv";
+  const sp = request.nextUrl.searchParams;
+  const format = sp.get("format") === "json" ? "json" : "csv";
+  const project = sp.get("project");
+  const taskFilter = sp.get("task");
 
-  const { data: entries } = await supabase
+  let query = supabase
     .from("time_entries")
     .select(
-      "started_at, ended_at, duration_seconds, note, task:tasks(name, project:projects(name))",
+      "started_at, ended_at, duration_seconds, note, task:tasks(project_id, name, project:projects(name))",
     )
     .not("ended_at", "is", null)
     .order("started_at", { ascending: false });
 
-  const rows = ((entries ?? []) as unknown as ExportEntry[]).map((e) => ({
+  if (taskFilter) query = query.eq("task_id", taskFilter);
+
+  const { data: entries } = await query;
+
+  const rows = ((entries ?? []) as unknown as ExportEntry[])
+    .filter((e) => !project || e.task?.project_id === project)
+    .map((e) => ({
     date: e.started_at.slice(0, 10),
     project: e.task?.project?.name ?? "",
     task: e.task?.name ?? "",

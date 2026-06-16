@@ -3,10 +3,10 @@ import TimerWidget from "@/components/TimerWidget";
 import { formatDuration } from "@/lib/stats";
 import { startOfDay, startOfWeek } from "date-fns";
 
+type ProjectRef = { name: string; color: string } | null;
+
 export default async function DashboardPage() {
   const supabase = await createClient();
-
-  type ProjectRef = { name: string; color: string } | null;
 
   const { data: runningData } = await supabase
     .from("time_entries")
@@ -54,7 +54,7 @@ export default async function DashboardPage() {
     )
     .not("ended_at", "is", null)
     .order("started_at", { ascending: false })
-    .limit(10);
+    .limit(8);
 
   const recent = (recentData ?? []) as unknown as {
     id: string;
@@ -65,51 +65,103 @@ export default async function DashboardPage() {
     task: { name: string; project: ProjectRef } | null;
   }[];
 
-  const todayTotal = (todayEntries ?? []).reduce(
-    (sum, e) => sum + (e.duration_seconds ?? 0),
-    0,
-  );
-  const weekTotal = (weekEntries ?? []).reduce(
-    (sum, e) => sum + (e.duration_seconds ?? 0),
-    0,
-  );
+  const todayTotal = (todayEntries ?? []).reduce((s, e) => s + (e.duration_seconds ?? 0), 0);
+  const weekTotal = (weekEntries ?? []).reduce((s, e) => s + (e.duration_seconds ?? 0), 0);
 
   return (
-    <div className="p-6 space-y-8">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
-
-      <TimerWidget tasks={tasks ?? []} running={running} />
-
-      <div className="flex gap-4">
-        <div className="rounded border p-4">
-          <div className="text-sm text-gray-500">Dnes</div>
-          <div className="text-xl font-semibold">{formatDuration(todayTotal)}</div>
-        </div>
-        <div className="rounded border p-4">
-          <div className="text-sm text-gray-500">Tento týden</div>
-          <div className="text-xl font-semibold">{formatDuration(weekTotal)}</div>
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      <div>
+        <h1 style={{ fontSize: "1.5rem" }}>Přehled</h1>
+        <p className="muted" style={{ marginTop: "0.2rem" }}>
+          Spusť časovač nebo si zkontroluj dnešní výkon.
+        </p>
       </div>
 
-      <div>
-        <h2 className="text-lg font-semibold mb-2">Poslední záznamy</h2>
-        {(recent ?? []).length === 0 ? (
-          <p className="text-sm text-gray-500">Zatím žádné záznamy.</p>
+      <TimerWidget tasks={tasks} running={running} />
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: "1rem",
+        }}
+      >
+        <StatCard label="Dnes" value={formatDuration(todayTotal)} />
+        <StatCard label="Tento týden" value={formatDuration(weekTotal)} />
+        <StatCard label="Aktivních tasků" value={String(tasks.length)} />
+      </div>
+
+      <div className="card">
+        <div
+          className="card-pad"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <h2 style={{ fontSize: "1rem" }}>Poslední záznamy</h2>
+          <a href="/history" className="btn btn-ghost btn-sm">
+            Vše →
+          </a>
+        </div>
+        {recent.length === 0 ? (
+          <div className="card-pad muted">Zatím žádné záznamy.</div>
         ) : (
-          <ul className="divide-y">
-            {(recent ?? []).map((e) => (
-              <li key={e.id} className="py-2 flex justify-between text-sm">
-                <span>
-                  {e.task?.project ? `${e.task.project.name} / ` : ""}
-                  {e.task?.name}
-                  {e.note ? ` — ${e.note}` : ""}
-                </span>
-                <span>{formatDuration(e.duration_seconds ?? 0)}</span>
-              </li>
-            ))}
-          </ul>
+          <table className="table">
+            <tbody>
+              {recent.map((e) => (
+                <tr key={e.id}>
+                  <td style={{ width: "0.5rem", paddingRight: 0 }}>
+                    <span
+                      className="dot"
+                      style={{ background: e.task?.project?.color ?? "#cbd5e1" }}
+                    />
+                  </td>
+                  <td>
+                    <div style={{ fontWeight: 500 }}>{e.task?.name}</div>
+                    {(e.task?.project || e.note) && (
+                      <div className="muted" style={{ fontSize: "0.8rem" }}>
+                        {e.task?.project?.name}
+                        {e.task?.project && e.note ? " · " : ""}
+                        {e.note}
+                      </div>
+                    )}
+                  </td>
+                  <td className="muted" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    {new Date(e.started_at).toLocaleDateString("cs-CZ", {
+                      day: "numeric",
+                      month: "numeric",
+                    })}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      fontWeight: 600,
+                      fontVariantNumeric: "tabular-nums",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {formatDuration(e.duration_seconds ?? 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="card card-pad">
+      <div className="muted" style={{ fontSize: "0.8rem" }}>
+        {label}
+      </div>
+      <div style={{ fontSize: "1.75rem", fontWeight: 700, marginTop: "0.2rem" }}>{value}</div>
     </div>
   );
 }

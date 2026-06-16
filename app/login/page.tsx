@@ -1,4 +1,5 @@
 import { signIn } from "./actions";
+import SubmitButton from "@/components/SubmitButton";
 
 export default async function LoginPage({
   searchParams,
@@ -8,31 +9,42 @@ export default async function LoginPage({
   const { error } = await searchParams;
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <div className="w-full max-w-sm space-y-4">
-        <h1 className="text-2xl font-bold text-center">Píchačky</h1>
-        <form action={signIn} className="space-y-3">
-          <input
-            name="email"
-            type="email"
-            required
-            placeholder="Email"
-            className="w-full border rounded px-3 py-2"
-          />
-          <input
-            name="password"
-            type="password"
-            required
-            placeholder="Heslo"
-            className="w-full border rounded px-3 py-2"
-          />
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            className="w-full rounded bg-blue-600 text-white px-3 py-2"
-          >
-            Přihlásit
-          </button>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "1.5rem",
+      }}
+    >
+      <div className="card card-pad" style={{ width: "100%", maxWidth: "22rem" }}>
+        <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+          <div style={{ fontSize: "1.75rem" }}>⏱</div>
+          <h1 style={{ fontSize: "1.4rem", marginTop: "0.25rem" }}>Píchačky</h1>
+          <p className="muted" style={{ marginTop: "0.25rem", fontSize: "0.85rem" }}>
+            Přihlas se ke svému účtu
+          </p>
+        </div>
+        <form action={signIn} style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+          <div>
+            <label className="label" htmlFor="email">
+              Email
+            </label>
+            <input id="email" name="email" type="email" required className="input" autoFocus />
+          </div>
+          <div>
+            <label className="label" htmlFor="password">
+              Heslo
+            </label>
+            <input id="password" name="password" type="password" required className="input" />
+          </div>
+          {error && (
+            <p style={{ color: "var(--danger)", fontSize: "0.85rem", margin: 0 }}>{error}</p>
+          )}
+          <SubmitButton className="btn btn-primary btn-lg" pendingText="Přihlašuji…">
+            Přihlásit se
+          </SubmitButton>
         </form>
       </div>
     </div>

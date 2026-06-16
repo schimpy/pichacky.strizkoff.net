@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { startTimer, stopTimer } from "@/app/timer/actions";
 
 type ProjectRef = { name: string; color: string } | null;
@@ -33,7 +33,7 @@ export default function TimerWidget({
 }) {
   const [elapsed, setElapsed] = useState(0);
   const [selectedTask, setSelectedTask] = useState(tasks[0]?.id ?? "");
-  const [pending, setPending] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!running) return;
@@ -46,62 +46,105 @@ export default function TimerWidget({
 
   if (running) {
     return (
-      <div className="rounded border p-4 flex items-center justify-between">
+      <div
+        className="card card-pad"
+        style={{
+          background: "linear-gradient(135deg, #4f46e5, #6366f1)",
+          color: "#fff",
+          border: "none",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "1rem",
+          flexWrap: "wrap",
+        }}
+      >
         <div>
-          <div className="text-sm text-gray-500">Běží</div>
-          <div className="font-semibold">
-            {running.task?.project ? `${running.task.project.name} / ` : ""}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              fontSize: "0.8rem",
+              opacity: 0.85,
+            }}
+          >
+            <span className="pulse-dot" />
+            Probíhá
+          </div>
+          <div style={{ fontWeight: 600, fontSize: "1.05rem", marginTop: "0.2rem" }}>
+            {running.task?.project ? `${running.task.project.name} · ` : ""}
             {running.task?.name}
           </div>
-          <div className="text-2xl font-mono">{formatElapsed(elapsed)}</div>
+          <div
+            style={{
+              fontSize: "2.25rem",
+              fontWeight: 700,
+              fontVariantNumeric: "tabular-nums",
+              letterSpacing: "0.02em",
+              marginTop: "0.2rem",
+            }}
+          >
+            {formatElapsed(elapsed)}
+          </div>
         </div>
         <button
-          disabled={pending}
-          onClick={async () => {
-            setPending(true);
-            await stopTimer(running.id);
-            setPending(false);
-          }}
-          className="rounded bg-red-600 text-white px-4 py-2 disabled:opacity-50"
+          className="btn btn-lg"
+          style={{ background: "#fff", color: "var(--brand)" }}
+          disabled={isPending}
+          onClick={() => startTransition(() => stopTimer(running.id))}
         >
-          Stop
+          {isPending ? "Zastavuji…" : "■ Stop"}
         </button>
+        <style>{`
+          .pulse-dot {
+            width: 0.55rem; height: 0.55rem; border-radius: 9999px; background: #fff;
+            animation: pulse 1.4s ease-in-out infinite;
+          }
+          @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+        `}</style>
       </div>
     );
   }
 
   if (tasks.length === 0) {
     return (
-      <div className="rounded border p-4 text-sm text-gray-500">
-        Nejdřív vytvoř nějaký task na stránce Tasky.
+      <div className="card card-pad muted">
+        Nejdřív si vytvoř task na stránce{" "}
+        <a href="/tasks" style={{ color: "var(--brand)", fontWeight: 500 }}>
+          Tasky
+        </a>
+        , pak můžeš spustit časovač.
       </div>
     );
   }
 
   return (
-    <div className="rounded border p-4 flex items-center gap-2">
-      <select
-        value={selectedTask}
-        onChange={(e) => setSelectedTask(e.target.value)}
-        className="border rounded px-2 py-1 flex-1"
-      >
-        {tasks.map((t) => (
-          <option key={t.id} value={t.id}>
-            {t.project ? `${t.project.name} / ` : ""}
-            {t.name}
-          </option>
-        ))}
-      </select>
+    <div
+      className="card card-pad"
+      style={{ display: "flex", alignItems: "flex-end", gap: "0.75rem", flexWrap: "wrap" }}
+    >
+      <div style={{ flex: 1, minWidth: "12rem" }}>
+        <label className="label">Na čem pracuješ?</label>
+        <select
+          className="select"
+          value={selectedTask}
+          onChange={(e) => setSelectedTask(e.target.value)}
+        >
+          {tasks.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.project ? `${t.project.name} · ` : ""}
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </div>
       <button
-        disabled={pending || !selectedTask}
-        onClick={async () => {
-          setPending(true);
-          await startTimer(selectedTask);
-          setPending(false);
-        }}
-        className="rounded bg-green-600 text-white px-4 py-2 disabled:opacity-50"
+        className="btn btn-primary btn-lg"
+        disabled={isPending || !selectedTask}
+        onClick={() => startTransition(() => startTimer(selectedTask))}
       >
-        Start
+        {isPending ? "Spouštím…" : "▶ Start"}
       </button>
     </div>
   );

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { createClient } from "@/lib/supabase/server";
-import Link from "next/link";
 import { signOut } from "./actions";
+import NavBar from "@/components/NavBar";
 
 export const metadata: Metadata = {
   title: "Píchačky",
@@ -22,21 +22,16 @@ export default async function RootLayout({
   return (
     <html lang="cs">
       <body>
-        {user && (
-          <nav>
-            <span className="font-bold">Píchačky</span>
-            <Link href="/">Dashboard</Link>
-            <Link href="/tasks">Tasky</Link>
-            <Link href="/history">Historie</Link>
-            <Link href="/stats">Statistiky</Link>
-            <form action={signOut}>
-              <button type="submit" className="text-sm text-gray-500">
-                Odhlásit
-              </button>
-            </form>
-          </nav>
-        )}
-        <main>{children}</main>
+        {user && <NavBar signOut={signOut} />}
+        <main
+          style={{
+            maxWidth: user ? "72rem" : "none",
+            margin: "0 auto",
+            padding: user ? "2rem 1.5rem" : "0",
+          }}
+        >
+          {children}
+        </main>
       </body>
     </html>
   );
