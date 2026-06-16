@@ -1,3 +1,5 @@
+import { pragueDayKey } from "./time";
+
 export function formatDuration(totalSeconds: number) {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
@@ -17,7 +19,7 @@ type TaskEntry = {
 export function groupByDay(entries: DayEntry[]) {
   const map = new Map<string, number>();
   for (const e of entries) {
-    const day = e.started_at.slice(0, 10);
+    const day = pragueDayKey(e.started_at);
     map.set(day, (map.get(day) ?? 0) + (e.duration_seconds ?? 0));
   }
   return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));

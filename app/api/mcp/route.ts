@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { pragueDayStartIso, pragueWeekStartIso, fmtDate, TZ } from "@/lib/time";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
+import { startOfMonth } from "date-fns";
 
 const TOOLS = [
   {
@@ -51,15 +54,9 @@ function fmtDuration(s: number) {
 }
 
 function periodStart(period: string) {
-  const now = new Date();
-  if (period === "today") return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-  if (period === "week") {
-    const d = new Date(now);
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString();
-  }
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  if (period === "today") return pragueDayStartIso();
+  if (period === "week") return pragueWeekStartIso();
+  return fromZonedTime(startOfMonth(toZonedTime(new Date(), TZ)), TZ).toISOString();
 }
 
 async function callTool(name: string, args: Record<string, unknown>): Promise<string> {
@@ -103,7 +100,7 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<st
 
     return rows
       .map((e) => {
-        const date = new Date(e.started_at).toLocaleDateString("cs-CZ");
+        const date = fmtDate(e.started_at);
         const proj = e.task?.project?.name ? `${e.task.project.name} / ` : "";
         const note = e.note ? ` — ${e.note}` : "";
         return `• ${date} | ${proj}${e.task?.name ?? "?"} | ${fmtDuration(e.duration_seconds ?? 0)}${note}`;

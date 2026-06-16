@@ -1,8 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
-import { createTimeEntry, updateTimeEntry, deleteTimeEntry } from "./actions";
+import { createTimeEntry, deleteTimeEntry } from "./actions";
 import { formatDuration } from "@/lib/stats";
+import { fmtDate, fmtTime, dateInputValue, timeInputValue, wallToUtcIso } from "@/lib/time";
 import SubmitButton from "@/components/SubmitButton";
 import TaskCombobox from "@/components/TaskCombobox";
+import InlineEditButton from "./InlineEditButton";
 
 type TaskRef = {
   id: string;
@@ -49,9 +51,8 @@ export default async function HistoryPage({
     .order("started_at", { ascending: sort === "asc" })
     .limit(200);
 
-  if (from) query = query.gte("started_at", from);
-  if (to) query = query.lte("started_at", to + "T23:59:59");
-  if (project) query = query.eq("task.project_id", project);
+  if (from) query = query.gte("started_at", wallToUtcIso(from, "00:00"));
+  if (to) query = query.lte("started_at", wallToUtcIso(to, "23:59:59"));
 
   const { data: entriesData } = await query;
   let entries = (entriesData ?? []) as unknown as EntryRow[];
@@ -133,7 +134,7 @@ export default async function HistoryPage({
           </div>
           <div>
             <label className="label">Datum</label>
-            <input type="date" name="date" required className="input" style={{ width: "9rem" }} defaultValue={new Date().toISOString().slice(0, 10)} />
+            <input type="date" name="date" required className="input" style={{ width: "9rem" }} defaultValue={dateInputValue(new Date())} />
           </div>
           <div>
             <label className="label">Od</label>
@@ -173,7 +174,42 @@ export default async function HistoryPage({
               </tr>
             )}
             {entries.map((e) => (
-              <EntryRow key={e.id} entry={e} tasks={tasks} />
+              <tr key={e.id}>
+                <td>
+                  <span style={{ fontWeight: 500 }}>{e.task?.name}</span>
+                  {e.task?.project && (
+                    <div className="muted" style={{ fontSize: "0.8rem" }}>{e.task.project.name}</div>
+                  )}
+                </td>
+                <td className="muted" style={{ whiteSpace: "nowrap" }}>
+                  {fmtDate(e.started_at, "d. M. yy")}
+                </td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {fmtTime(e.started_at)} – {fmtTime(e.ended_at as string)}
+                </td>
+                <td style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                  {formatDuration(e.duration_seconds ?? 0)}
+                </td>
+                <td className="muted" style={{ maxWidth: "12rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {e.note}
+                </td>
+                <td>
+                  <div style={{ display: "flex", gap: "0.25rem" }}>
+                    <InlineEditButton
+                      entryId={e.id}
+                      taskId={e.task?.id}
+                      defaultDate={dateInputValue(e.started_at)}
+                      defaultStart={timeInputValue(e.started_at)}
+                      defaultEnd={timeInputValue(e.ended_at as string)}
+                      defaultNote={e.note ?? ""}
+                      tasks={tasks}
+                    />
+                    <form action={deleteTimeEntry.bind(null, e.id)} style={{ display: "inline" }}>
+                      <SubmitButton className="btn btn-ghost btn-sm" pendingText="…">Smazat</SubmitButton>
+                    </form>
+                  </div>
+                </td>
+              </tr>
             ))}
           </tbody>
         </table>
@@ -181,76 +217,3 @@ export default async function HistoryPage({
     </div>
   );
 }
-
-function EntryRow({
-  entry: e,
-  tasks,
-}: {
-  entry: EntryRow;
-  tasks: { id: string; name: string; project_id: string | null; project: { id: string; name: string; color: string } | null }[];
-}) {
-  const start = new Date(e.started_at);
-  const end = new Date(e.ended_at as string);
-  const fmt = (d: Date) => d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
-
-  return (
-    <>
-      <tr>
-        <td>
-          <span style={{ fontWeight: 500 }}>{e.task?.name}</span>
-          {e.task?.project && (
-            <div className="muted" style={{ fontSize: "0.8rem" }}>{e.task.project.name}</div>
-          )}
-        </td>
-        <td className="muted" style={{ whiteSpace: "nowrap" }}>
-          {start.toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric", year: "2-digit" })}
-        </td>
-        <td style={{ whiteSpace: "nowrap" }}>{fmt(start)} – {fmt(end)}</td>
-        <td style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-          {formatDuration(e.duration_seconds ?? 0)}
-        </td>
-        <td className="muted" style={{ maxWidth: "12rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {e.note}
-        </td>
-        <td>
-          <div style={{ display: "flex", gap: "0.25rem" }}>
-            <EditEntryForm entry={e} tasks={tasks} />
-          </div>
-        </td>
-      </tr>
-    </>
-  );
-}
-
-function EditEntryForm({
-  entry: e,
-  tasks,
-}: {
-  entry: EntryRow;
-  tasks: { id: string; name: string; project_id: string | null; project: { id: string; name: string; color: string } | null }[];
-}) {
-  const start = new Date(e.started_at);
-  const end = new Date(e.ended_at as string);
-
-  return (
-    <>
-      <form
-        action={updateTimeEntry.bind(null, e.id)}
-        style={{ display: "contents" }}
-        id={`edit-${e.id}`}
-      >
-        <input type="hidden" name="date" value={start.toISOString().slice(0, 10)} />
-        <input type="hidden" name="start_time" value={start.toTimeString().slice(0, 5)} />
-        <input type="hidden" name="end_time" value={end.toTimeString().slice(0, 5)} />
-        <input type="hidden" name="note" value={e.note ?? ""} />
-      </form>
-      <InlineEditButton entry={e} tasks={tasks} />
-      <form action={deleteTimeEntry.bind(null, e.id)} style={{ display: "inline" }}>
-        <SubmitButton className="btn btn-ghost btn-sm" pendingText="…" >Smazat</SubmitButton>
-      </form>
-    </>
-  );
-}
-
-// client wrapper for the inline edit experience
-import InlineEditButton from "./InlineEditButton";

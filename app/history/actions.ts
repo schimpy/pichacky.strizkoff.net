@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { wallToUtcIso } from "@/lib/time";
 
 function computeDuration(start: string, end: string) {
   return Math.max(
@@ -23,8 +24,8 @@ export async function createTimeEntry(formData: FormData) {
   const endTime = formData.get("end_time") as string;
   const note = (formData.get("note") as string) || null;
 
-  const startedAt = new Date(`${date}T${startTime}`).toISOString();
-  const endedAt = new Date(`${date}T${endTime}`).toISOString();
+  const startedAt = wallToUtcIso(date, startTime);
+  const endedAt = wallToUtcIso(date, endTime);
 
   const { error } = await supabase.from("time_entries").insert({
     user_id: user.id,
@@ -49,8 +50,8 @@ export async function updateTimeEntry(id: string, formData: FormData) {
   const note = (formData.get("note") as string) || null;
   const taskId = formData.get("task_id") as string | null;
 
-  const startedAt = new Date(`${date}T${startTime}`).toISOString();
-  const endedAt = new Date(`${date}T${endTime}`).toISOString();
+  const startedAt = wallToUtcIso(date, startTime);
+  const endedAt = wallToUtcIso(date, endTime);
 
   const update: Record<string, unknown> = {
     started_at: startedAt,

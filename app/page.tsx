@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import TimerWidget from "@/components/TimerWidget";
 import QuickStart from "@/components/QuickStart";
 import { formatDuration } from "@/lib/stats";
-import { startOfDay, startOfWeek } from "date-fns";
+import { fmtDate, pragueDayStartIso, pragueWeekStartIso } from "@/lib/time";
 
 type ProjectRef = { name: string; color: string } | null;
 
@@ -36,8 +36,8 @@ export default async function DashboardPage() {
 
   const recurringTasks = tasks.filter((t) => t.recurring);
 
-  const todayStart = startOfDay(new Date()).toISOString();
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 }).toISOString();
+  const todayStart = pragueDayStartIso();
+  const weekStart = pragueWeekStartIso();
 
   const [{ data: todayEntries }, { data: weekEntries }, { data: recentData }] = await Promise.all([
     supabase
@@ -74,7 +74,7 @@ export default async function DashboardPage() {
       <div>
         <h1 style={{ fontSize: "1.5rem" }}>Přehled</h1>
         <p className="muted" style={{ marginTop: "0.2rem" }}>
-          {new Date().toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" })}
+          {new Date().toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Prague" })}
         </p>
       </div>
 
@@ -119,7 +119,7 @@ export default async function DashboardPage() {
                     )}
                   </td>
                   <td className="muted" style={{ textAlign: "right", whiteSpace: "nowrap", fontSize: "0.8rem" }}>
-                    {new Date(e.started_at).toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric" })}
+                    {fmtDate(e.started_at, "d. M.")}
                   </td>
                   <td style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
                     {formatDuration(e.duration_seconds ?? 0)}

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest } from "next/server";
+import { fmtDate, fmtTime } from "@/lib/time";
 
 type ExportEntry = {
   started_at: string;
@@ -31,11 +32,11 @@ export async function GET(request: NextRequest) {
   const rows = ((entries ?? []) as unknown as ExportEntry[])
     .filter((e) => !project || e.task?.project_id === project)
     .map((e) => ({
-    date: e.started_at.slice(0, 10),
+    date: fmtDate(e.started_at, "yyyy-MM-dd"),
     project: e.task?.project?.name ?? "",
     task: e.task?.name ?? "",
-    started_at: e.started_at,
-    ended_at: e.ended_at,
+    started_at: `${fmtDate(e.started_at, "yyyy-MM-dd")} ${fmtTime(e.started_at)}`,
+    ended_at: e.ended_at ? `${fmtDate(e.ended_at, "yyyy-MM-dd")} ${fmtTime(e.ended_at)}` : "",
     duration_seconds: e.duration_seconds,
     note: e.note ?? "",
   }));
