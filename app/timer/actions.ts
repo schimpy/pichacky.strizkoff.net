@@ -12,7 +12,7 @@ export async function startTimer(taskId: string) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) throw new Error("Nejsi přihlášený.");
 
   const { data: running } = await supabase
     .from("time_entries")
@@ -31,11 +31,12 @@ export async function startTimer(taskId: string) {
       .eq("id", running.id);
   }
 
-  await supabase.from("time_entries").insert({
+  const { error } = await supabase.from("time_entries").insert({
     user_id: user.id,
     task_id: taskId,
     started_at: new Date().toISOString(),
   });
+  if (error) throw new Error(`Nepodařilo se spustit časovač: ${error.message}`);
 
   revalidatePath("/");
 }
@@ -52,13 +53,14 @@ export async function stopTimer(entryId: string) {
   if (!entry) return;
 
   const endedAt = new Date();
-  await supabase
+  const { error } = await supabase
     .from("time_entries")
     .update({
       ended_at: endedAt.toISOString(),
       duration_seconds: durationSeconds(entry.started_at, endedAt),
     })
     .eq("id", entryId);
+  if (error) throw new Error(`Nepodařilo se zastavit časovač: ${error.message}`);
 
   revalidatePath("/");
 }

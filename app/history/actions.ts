@@ -15,7 +15,7 @@ export async function createTimeEntry(formData: FormData) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) throw new Error("Nejsi přihlášený.");
 
   const taskId = formData.get("task_id") as string;
   const date = formData.get("date") as string;
@@ -26,7 +26,7 @@ export async function createTimeEntry(formData: FormData) {
   const startedAt = new Date(`${date}T${startTime}`).toISOString();
   const endedAt = new Date(`${date}T${endTime}`).toISOString();
 
-  await supabase.from("time_entries").insert({
+  const { error } = await supabase.from("time_entries").insert({
     user_id: user.id,
     task_id: taskId,
     started_at: startedAt,
@@ -34,6 +34,7 @@ export async function createTimeEntry(formData: FormData) {
     duration_seconds: computeDuration(startedAt, endedAt),
     note,
   });
+  if (error) throw new Error(`Nepodařilo se uložit záznam: ${error.message}`);
 
   revalidatePath("/history");
   revalidatePath("/");
@@ -50,7 +51,7 @@ export async function updateTimeEntry(id: string, formData: FormData) {
   const startedAt = new Date(`${date}T${startTime}`).toISOString();
   const endedAt = new Date(`${date}T${endTime}`).toISOString();
 
-  await supabase
+  const { error } = await supabase
     .from("time_entries")
     .update({
       started_at: startedAt,
@@ -59,6 +60,7 @@ export async function updateTimeEntry(id: string, formData: FormData) {
       note,
     })
     .eq("id", id);
+  if (error) throw new Error(`Nepodařilo se upravit záznam: ${error.message}`);
 
   revalidatePath("/history");
   revalidatePath("/");
@@ -66,7 +68,8 @@ export async function updateTimeEntry(id: string, formData: FormData) {
 
 export async function deleteTimeEntry(id: string) {
   const supabase = await createClient();
-  await supabase.from("time_entries").delete().eq("id", id);
+  const { error } = await supabase.from("time_entries").delete().eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/history");
   revalidatePath("/");
 }
